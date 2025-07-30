@@ -71,7 +71,6 @@ if st.session_state.page == 0:
         """
         <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black; max-width: 80%; margin: auto;">
             <p>Welcome! This app quizzes you on 50 random Vietnamese-Korean pairs from your file. You'll see 10 words per page.</p>
-            <p>Since you're in Gwangjin District, Seoul, try practicing these at local spots like Children's Grand Park—maybe count items in native Korean while walking!</p>
         </div>
         """,
         unsafe_allow_html=True
