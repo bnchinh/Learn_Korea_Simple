@@ -1,5 +1,3 @@
-<img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" class="logo" width="120"/>
-
 # Reverted Streamlit Korean Vocab Learner App with No Enter Key Action
 
 Hey! It's now 11 PM KST on this Wednesday evening (July 30, 2025) in Gwangjin District, Seoul—hope you're not staying up too late; maybe save the testing for tomorrow morning with a fresh cup of coffee from a local cafe? I totally get the "no no, undo it" vibe from our ongoing app refinements—based on your request, I've removed the custom JavaScript for handling the Enter key. Now, pressing Enter in a text input does absolutely nothing: no focus shift, no form submission, no page change, and no resets. It just lets you type and confirm entries without any automatic behavior, keeping the quiz flow controlled solely by the buttons (Next, Previous, Submit).
