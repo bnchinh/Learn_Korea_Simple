@@ -47,26 +47,17 @@ except Exception as e:
     st.error(f"Error loading file: {str(e)}")
     st.stop()
 
-# Session state for persistent random selection and inputs
-if 'vietnamese' not in st.session_state:
-    selected_indices = random.sample(range(len(df)), 50)
-    selected_vocab = df.iloc[selected_indices].reset_index(drop=True)
-    st.session_state.vietnamese = selected_vocab[0].tolist()
-    st.session_state.korean_correct = selected_vocab[1].tolist()
+# Session state setup
+if 'page' not in st.session_state:
     st.session_state.page = 0
     st.session_state.user_inputs = [""] * 50
-
-vietnamese = st.session_state.vietnamese
-korean_correct = st.session_state.korean_correct
+    st.session_state.vietnamese = None
+    st.session_state.korean_correct = None
 
 words_per_page = 10
 total_pages = 50 // words_per_page
 
 st.title("Korean Vocab Learner")
-
-# Callback to update input without causing resets
-def update_input(index):
-    st.session_state.user_inputs[index] = st.session_state[f"input_{index}"]
 
 # Welcome page
 if st.session_state.page == 0:
@@ -76,67 +67,93 @@ if st.session_state.page == 0:
         """
         <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black;">
             <p>Welcome! This app quizzes you on 50 random Vietnamese-Korean pairs from your file. You'll see 10 words per page.</p>
+            <p>Since you're in Gwangjin District, Seoul, try practicing these at local spots like Children's Grand Park—maybe count items in native Korean while walking!</p>
         </div>
         """,
         unsafe_allow_html=True
     )
     if st.button("Start Quiz"):
+        # Generate random 50 words ONLY here, before quiz starts
+        selected_indices = random.sample(range(len(df)), 50)
+        selected_vocab = df.iloc[selected_indices].reset_index(drop=True)
+        st.session_state.vietnamese = selected_vocab[0].tolist()
+        st.session_state.korean_correct = selected_vocab[1].tolist()
         st.session_state.page = 1
         st.rerun()
 
 # Quiz pages
 else:
+    if st.session_state.vietnamese is None:
+        st.error("Quiz not started. Return to welcome page.")
+        st.stop()
+
+    vietnamese = st.session_state.vietnamese
+    korean_correct = st.session_state.korean_correct
+
     st.subheader(f"Page {st.session_state.page} of {total_pages}")
     start_idx = (st.session_state.page - 1) * words_per_page
     end_idx = start_idx + words_per_page
 
-    for i in range(start_idx, end_idx):
-        st.write(f"{i + 1}. {vietnamese[i]}")
-        st.text_input(
-            f"Enter Korean for {vietnamese[i]}",
-            value=st.session_state.user_inputs[i],
-            key=f"input_{i}",
-            on_change=update_input,
-            args=(i,)
-        )
+    with st.form(key=f"quiz_form_{st.session_state.page}"):
+        for i in range(start_idx, end_idx):
+            st.write(f"{i + 1}. {vietnamese[i]}")
+            st.session_state.user_inputs[i] = st.text_input(
+                f"Enter Korean for {vietnamese[i]}",
+                value=st.session_state.user_inputs[i],
+                key=f"input_{i}",
+            )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.session_state.page > 1 and st.button("Previous"):
-            st.session_state.page -= 1
-            st.rerun()
-    with col2:
-        if st.session_state.page < total_pages:
-            if st.button("Next"):
-                st.session_state.page += 1
-                st.rerun()
+        # This is the crucial part:
+        submitted = st.form_submit_button("Submit Answers")
+
+        # Navigation and submit buttons inside form for batch saving
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.session_state.page > 1:
+                previous = st.form_submit_button("Previous")
+            else:
+                previous = False
+        with col2:
+            if st.session_state.page < total_pages:
+                next_btn = st.form_submit_button("Next")
+            else:
+                submit = st.form_submit_button("Submit and Score")
+                next_btn = False
+                previous = False  # No previous on submit
+
+    # Handle button actions after form submission (saves inputs automatically via session state)
+    if previous:
+        st.session_state.page -= 1
+        st.rerun()
+    elif next_btn:
+        st.session_state.page += 1
+        st.rerun()
+    elif 'submit' in locals() and submit:
+        score = 0
+        feedback = []
+        for i in range(50):
+            user_input = st.session_state.user_inputs[i].strip().lower()
+            correct = str(korean_correct[i]).strip().lower()
+            if user_input == correct:
+                score += 1
+            elif user_input:
+                feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You entered: '{st.session_state.user_inputs[i]}')")
+            else:
+                feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You left it blank)")
+
+        percentage = (score / 50) * 100
+        st.success(f"Your score: {score}/50 ({percentage:.2f}%)")
+        if feedback:
+            st.subheader("Feedback on incorrect/blank ones:")
+            with st.expander("See details (scrollable)"):
+                for item in feedback:
+                    st.write(item)
         else:
-            if st.button("Submit and Score"):
-                score = 0
-                feedback = []
-                for i in range(50):
-                    user_input = st.session_state.user_inputs[i].strip().lower()
-                    correct = str(korean_correct[i]).strip().lower()
-                    if user_input == correct:
-                        score += 1
-                    elif user_input:
-                        feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You entered: '{st.session_state.user_inputs[i]}')")
-                    else:
-                        feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You left it blank)")
-
-                percentage = (score / 50) * 100
-                st.success(f"Your score: {score}/50 ({percentage:.2f}%)")
-                if feedback:
-                    st.subheader("Feedback on incorrect/blank ones:")
-                    with st.expander("See details (scrollable)"):
-                        for item in feedback:
-                            st.write(item)
-                else:
-                    st.success("Perfect! All correct.")
-                if st.button("Restart Quiz"):
-                    # Clear session state to regenerate new random words
-                    del st.session_state['vietnamese']
-                    del st.session_state['korean_correct']
-                    st.session_state.page = 0
-                    st.session_state.user_inputs = [""] * 50
-                    st.rerun()
+            st.success("Perfect! All correct.")
+        if st.button("Restart Quiz"):
+            # Clear session state to allow new randomization on next start
+            st.session_state.page = 0
+            st.session_state.user_inputs = [""] * 50
+            st.session_state.vietnamese = None
+            st.session_state.korean_correct = None
+            st.rerun()
