@@ -30,7 +30,7 @@ def img_to_base64(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
-# Load Excel directly
+# Load Excel directly (once)
 file_path = "vocab_modified.xlsx"
 try:
     df = pd.read_excel(file_path, header=None, engine='openpyxl')
@@ -47,29 +47,34 @@ except Exception as e:
     st.error(f"Error loading file: {str(e)}")
     st.stop()
 
-# Random select 50
-selected_indices = random.sample(range(len(df)), 50)
-selected_vocab = df.iloc[selected_indices].reset_index(drop=True)
-vietnamese = selected_vocab[0].tolist()
-korean_correct = selected_vocab[1].tolist()
-
-# Session state
-if 'page' not in st.session_state:
+# Session state for persistent random selection and inputs
+if 'vietnamese' not in st.session_state:
+    selected_indices = random.sample(range(len(df)), 50)
+    selected_vocab = df.iloc[selected_indices].reset_index(drop=True)
+    st.session_state.vietnamese = selected_vocab[0].tolist()
+    st.session_state.korean_correct = selected_vocab[1].tolist()
     st.session_state.page = 0
     st.session_state.user_inputs = [""] * 50
+
+vietnamese = st.session_state.vietnamese
+korean_correct = st.session_state.korean_correct
 
 words_per_page = 10
 total_pages = 50 // words_per_page
 
 st.title("Korean Vocab Learner")
 
+# Callback to update input without causing resets
+def update_input(index):
+    st.session_state.user_inputs[index] = st.session_state[f"input_{index}"]
+
 # Welcome page
 if st.session_state.page == 0:
     set_background("image.jpg")  # Apply blurred hardcoded background
-    # Styled welcome text with green border and black text (Safari-friendly)
+    # Styled welcome text with green border and black text
     st.markdown(
         """
-        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black; max-width: 80%; margin: auto;">
+        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black;">
             <p>Welcome! This app quizzes you on 50 random Vietnamese-Korean pairs from your file. You'll see 10 words per page.</p>
         </div>
         """,
@@ -87,8 +92,12 @@ else:
 
     for i in range(start_idx, end_idx):
         st.write(f"{i + 1}. {vietnamese[i]}")
-        st.session_state.user_inputs[i] = st.text_input(
-            f"Enter Korean for {vietnamese[i]}", value=st.session_state.user_inputs[i], key=f"input_{i}"
+        st.text_input(
+            f"Enter Korean for {vietnamese[i]}",
+            value=st.session_state.user_inputs[i],
+            key=f"input_{i}",
+            on_change=update_input,
+            args=(i,)
         )
 
     col1, col2 = st.columns(2)
@@ -125,6 +134,9 @@ else:
                 else:
                     st.success("Perfect! All correct.")
                 if st.button("Restart Quiz"):
+                    # Clear session state to regenerate new random words
+                    del st.session_state['vietnamese']
+                    del st.session_state['korean_correct']
                     st.session_state.page = 0
                     st.session_state.user_inputs = [""] * 50
                     st.rerun()
