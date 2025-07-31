@@ -61,13 +61,8 @@ Great for practicing Sino-Korean and native Korean numbers (1-100) or general vo
 - Hosted on Streamlit Community Cloud: Deploy your own version by forking the repo and connecting to share.streamlit.io.
 - For Hugging Face Spaces or similar: Upload the script, files, and `requirements.txt`; set as a Streamlit app.
 
+## Future updates
 
-## Technologies
-
-- **Streamlit**: For the web interface and interactivity.
-- **Pandas**: For loading and processing the Excel file.
-- **Pillow**: For image blurring and base64 encoding.
-- **Python Standard Libraries**: For randomization and I/O.
-
-If you encounter issues (e.g., in Safari), clear your cache or test in another browser. Feel free to fork and customize for your Korean learning needs!
+- Adjust the distribution of number letters.
+- Build English or Vietnamese options.
 
