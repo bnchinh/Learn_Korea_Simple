@@ -4,6 +4,7 @@ import random
 from PIL import Image, ImageFilter
 import base64
 from io import BytesIO
+from random_words import pick_random_words
 
 # Custom CSS for background image
 def set_background(image_path):
@@ -31,14 +32,30 @@ def img_to_base64(img):
     return base64.b64encode(buffered.getvalue()).decode()
 
 # Load Excel directly (once)
-file_path = "vocab_modified.xlsx"
+vocab_path = "vocab_modified.xlsx"
 try:
-    df = pd.read_excel(file_path, header=None, engine='openpyxl')
+    df = pd.read_excel(vocab_path, header=None, engine='openpyxl')
     if len(df) < 50:
         st.error("File has fewer than 50 entries. Add more vocabulary!")
         st.stop()
 except FileNotFoundError:
     st.error("vocab_modified.xlsx not found! Place it in the same folder or repo.")
+    st.stop()
+except ImportError:
+    st.error("Missing dependency: Install openpyxl by adding it to requirements.txt.")
+    st.stop()
+except Exception as e:
+    st.error(f"Error loading file: {str(e)}")
+    st.stop()
+
+numbers_path = "numbers.xlsx"
+try:
+    df = pd.read_excel(numbers_path, header=None, engine='openpyxl')
+    if len(df) < 50:
+        st.error("File has fewer than 100 entries. Add more numbers!")
+        st.stop()
+except FileNotFoundError:
+    st.error("numbers.xlsx not found! Place it in the same folder or repo.")
     st.stop()
 except ImportError:
     st.error("Missing dependency: Install openpyxl by adding it to requirements.txt.")
@@ -67,17 +84,15 @@ if st.session_state.page == 0:
         """
         <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black;">
             <p>Welcome! This app quizzes you on 50 random Vietnamese-Korean pairs from your file. You'll see 10 words per page.</p>
-            <p>Since you're in Gwangjin District, Seoul, try practicing these at local spots like Children's Grand Park—maybe count items in native Korean while walking!</p>
         </div>
         """,
         unsafe_allow_html=True
     )
     if st.button("Start Quiz"):
         # Generate random 50 words ONLY here, before quiz starts
-        selected_indices = random.sample(range(len(df)), 50)
-        selected_vocab = df.iloc[selected_indices].reset_index(drop=True)
-        st.session_state.vietnamese = selected_vocab[0].tolist()
-        st.session_state.korean_correct = selected_vocab[1].tolist()
+        selected_vocab = pick_random_words(vocab_path=vocab_path, numbers_path=numbers_path, n_vocab=40, n_numbers=10)
+        st.session_state.vietnamese = selected_vocab["Vietnamese"].tolist()
+        st.session_state.korean_correct = selected_vocab["Korean"].tolist()
         st.session_state.page = 1
         st.rerun()
 
