@@ -149,7 +149,8 @@ else:
         for i in range(50):
             user_input = st.session_state.user_inputs[i].strip().lower()
             correct = str(korean_correct[i]).strip().lower()
-            if user_input == correct:
+            corrects = correct.split(sep=",")
+            if user_input in corrects:
                 score += 1
             elif user_input:
                 feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You entered: '{st.session_state.user_inputs[i]}')")
@@ -167,8 +168,9 @@ else:
             st.success("Perfect! All correct.")
         if st.button("Restart Quiz"):
             # Clear session state to allow new randomization on next start
-            st.session_state.page = 0
             st.session_state.user_inputs = [""] * 50
             st.session_state.vietnamese = None
             st.session_state.korean_correct = None
+            del st.session_state.page
+            st.cache_resource.clear()
             st.rerun()
