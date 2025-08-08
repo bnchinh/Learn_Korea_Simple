@@ -79,83 +79,119 @@ words_per_page = 10
 st.title("Korean Vocab Learner")
 
 # ===============================
-# Prepare data grouped by chapter
+# Prepare chapters list
 # ===============================
-def prepare_quiz_data():
-    # Convert Chapter to str
-    vocab_df["Chapter"] = vocab_df["Chapter"].astype(str)
-
-    def chapter_sort_key(ch):
-        try:
-            return (0, int(ch))
-        except:
-            return (1, ch)
-
-    # Sort vocab by Chapter numerically where possible, others last
-    vocab_sorted = vocab_df.sort_values(
-        by=["Chapter"],
-        key=lambda col: col.map(chapter_sort_key)
-    ).reset_index(drop=True)
-
-    # Append Numbers chapter at the end
-    numbers_sample = numbers_df.sample(n=10, random_state=None).copy()
-    numbers_sample["Chapter"] = "Numbers"
-
-    full_df = pd.concat([vocab_sorted, numbers_sample], ignore_index=True)
-
-    # Flatten columns to lists
-    vietnamese = full_df["Vietnamese"].tolist()
-    korean = full_df["Korean"].tolist()
-    chapters = full_df["Chapter"].tolist()
-
-    # Calculate page ends for chapters to detect when chapter ends
-    chapter_page_ends = []
-    current_page = 1
-    words_in_current_page = 0
-    last_chapter = chapters[0]
-    for i, ch in enumerate(chapters):
-        words_in_current_page += 1
-        # If chapter changed or page full, increment page
-        if ch != last_chapter or words_in_current_page > words_per_page:
-            if ch != last_chapter:
-                chapter_page_ends.append(current_page)
-                last_chapter = ch
-                words_in_current_page = 1
-            else:
-                current_page += 1
-                words_in_current_page = 1
-
-    chapter_page_ends.append(current_page)
-    total_pages = current_page
-
-    return vietnamese, korean, chapters, chapter_page_ends, total_pages
-
+all_chapters = sorted(vocab_df["Chapter"].astype(str).unique(), key=lambda x: (int(x) if x.isdigit() else float('inf'), x))
+# all_chapters is like ['1', '2', '3', ...] excluding numbers chapter
 
 # ===============================
-# Welcome page
+# Welcome page with chapter select
 # ===============================
 if st.session_state.page == 0:
     set_background("image.jpg")
     st.markdown(
         """
-        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black;">
-            <p>Welcome! This app quizzes you chapter-by-chapter on all Vietnamese-Korean pairs from your file, plus 10 random numbers at the end. You'll see 10 items per page. After finishing each chapter, you'll get immediate feedback!</p>
+        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7);
+        border-radius: 10px; text-align: center; color: black;">
+            <p>Welcome! Select chapters to quiz on all Vietnamese-Korean pairs from your file,
+               plus 10 random numbers at the end. You'll see 10 items per page.
+               After finishing each chapter, you'll get immediate feedback!</p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+    # Chapter multiselect
+    selected_chapters = st.multiselect(
+        "Select chapters to include in the quiz:",
+        options=all_chapters,
+        default=all_chapters  # all selected by default
+    )
+
     if st.button("Start Quiz"):
-        vocab, korean, chapters, chapter_page_ends, total_pages = prepare_quiz_data()
-        st.session_state.vietnamese = vocab
-        st.session_state.korean_correct = korean
-        st.session_state.chapters = chapters
-        st.session_state.chapter_page_ends = chapter_page_ends
-        st.session_state.total_pages = total_pages
-        st.session_state.user_inputs = [""] * len(vocab)
-        st.session_state.page = 1
-        st.session_state.current_chapter = None
-        st.rerun()
+        if not selected_chapters:
+            st.error("Please select at least one chapter to start the quiz.")
+        else:
+            # Prepare data filtered by selected chapters + numbers
+            def prepare_quiz_data_filtered(selected_chapters):
+                # Filter vocab by selected chapters
+                filtered_vocab = vocab_df[vocab_df["Chapter"].astype(str).isin(selected_chapters)].copy()
+                filtered_vocab["Chapter"] = filtered_vocab["Chapter"].astype(str)
+
+                def chapter_sort_key(ch):
+                    try:
+                        return (0, int(ch))
+                    except:
+                        return (1, ch)
+
+                vocab_sorted = filtered_vocab.sort_values(
+                    by=["Chapter"],
+                    key=lambda col: col.map(chapter_sort_key)
+                ).reset_index(drop=True)
+
+                # Append Numbers chapter at the end
+                numbers_sample = numbers_df.sample(n=10, random_state=None).copy()
+                numbers_sample["Chapter"] = "Numbers"
+
+                vietnamese_pages = []
+                korean_pages = []
+                chapters_pages = []
+                chapter_page_ends = []
+
+                current_page = 0
+
+                def chunks(lst, n):
+                    for i in range(0, len(lst), n):
+                        yield lst[i:i + n]
+
+                # Process each chapter separately
+                chapters_grouped = vocab_sorted.groupby("Chapter")
+                for ch, group in chapters_grouped:
+                    v_list = group["Vietnamese"].tolist()
+                    k_list = group["Korean"].tolist()
+
+                    # Split chapter words into pages of size words_per_page (10)
+                    chapter_pages = list(chunks(v_list, words_per_page))
+
+                    # For each page in this chapter
+                    for i, v_chunk in enumerate(chapter_pages):
+                        k_chunk = k_list[i * words_per_page: i * words_per_page + len(v_chunk)]
+                        vietnamese_pages.extend(v_chunk)
+                        korean_pages.extend(k_chunk)
+                        chapters_pages.extend([ch] * len(v_chunk))
+                        current_page += 1
+                    chapter_page_ends.append(current_page)
+
+                # Add Numbers chapter last with same logic
+                v_list = numbers_sample["Vietnamese"].tolist()
+                k_list = numbers_sample["Korean"].tolist()
+                numbers_pages = list(chunks(v_list, words_per_page))
+                for i, v_chunk in enumerate(numbers_pages):
+                    k_chunk = k_list[i * words_per_page: i * words_per_page + len(v_chunk)]
+                    vietnamese_pages.extend(v_chunk)
+                    korean_pages.extend(k_chunk)
+                    chapters_pages.extend(["Numbers"] * len(v_chunk))
+                    current_page += 1
+                chapter_page_ends.append(current_page)
+
+                total_pages = current_page
+
+                return vietnamese_pages, korean_pages, chapters_pages, chapter_page_ends, total_pages
+
+
+
+            vocab, korean, chapters, chapter_page_ends, total_pages = prepare_quiz_data_filtered(selected_chapters)
+
+            st.session_state.vietnamese = vocab
+            st.session_state.korean_correct = korean
+            st.session_state.chapters = chapters
+            st.session_state.chapter_page_ends = chapter_page_ends
+            st.session_state.total_pages = total_pages
+            st.session_state.user_inputs = [""] * len(vocab)
+            st.session_state.page = 1
+            st.session_state.current_chapter = None
+            st.rerun()
+
 
 # ===============================
 # Quiz pages
