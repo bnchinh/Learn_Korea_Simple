@@ -30,6 +30,13 @@ def img_to_base64(img):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
+def chapter_sort_key(ch):
+    # numeric-first ordering: 1,2,3,... then non-numeric lexicographically
+    try:
+        return (0, int(str(ch)))
+    except:
+        return (1, str(ch))
+
 # ===============================
 # Load Excel files
 # ===============================
@@ -74,6 +81,7 @@ if 'page' not in st.session_state:
     st.session_state.total_pages = 0
     st.session_state.chapter_page_ends = []  # page indices where chapters end
     st.session_state.current_chapter = None  # currently finished chapter to show score
+    st.session_state.rand_seed = None
 
 words_per_page = 10
 st.title("Korean Vocab Learner")
@@ -81,8 +89,11 @@ st.title("Korean Vocab Learner")
 # ===============================
 # Prepare chapters list
 # ===============================
-all_chapters = sorted(vocab_df["Chapter"].astype(str).unique(), key=lambda x: (int(x) if x.isdigit() else float('inf'), x))
-# all_chapters is like ['1', '2', '3', ...] excluding numbers chapter
+all_chapters = sorted(
+    vocab_df["Chapter"].astype(str).unique(),
+    key=chapter_sort_key
+)
+# all_chapters like ['1','2','3',...] (numeric-first), excluding Numbers (numbers.xlsx is separate)
 
 # ===============================
 # Welcome page with chapter select
@@ -91,8 +102,7 @@ if st.session_state.page == 0:
     set_background("image.jpg")
     st.markdown(
         """
-        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7);
-        border-radius: 10px; text-align: center; color: black;">
+        <div style="border: 2px solid green; padding: 20px; background-color: rgba(255, 255, 255, 0.7); border-radius: 10px; text-align: center; color: black;">
             <p>Welcome! Select chapters to quiz on all Vietnamese-Korean pairs from your file,
                plus 10 random numbers at the end. You'll see 10 items per page.
                After finishing each chapter, you'll get immediate feedback!</p>
@@ -105,55 +115,51 @@ if st.session_state.page == 0:
     selected_chapters = st.multiselect(
         "Select chapters to include in the quiz:",
         options=all_chapters,
-        default=all_chapters  # all selected by default
+        default=all_chapters
     )
 
     if st.button("Start Quiz"):
         if not selected_chapters:
             st.error("Please select at least one chapter to start the quiz.")
         else:
-            # Prepare data filtered by selected chapters + numbers
             def prepare_quiz_data_filtered(selected_chapters):
                 # Filter vocab by selected chapters
                 filtered_vocab = vocab_df[vocab_df["Chapter"].astype(str).isin(selected_chapters)].copy()
                 filtered_vocab["Chapter"] = filtered_vocab["Chapter"].astype(str)
 
-                def chapter_sort_key(ch):
-                    try:
-                        return (0, int(ch))
-                    except:
-                        return (1, ch)
-
+                # Sort vocab rows by Chapter using the same key
                 vocab_sorted = filtered_vocab.sort_values(
                     by=["Chapter"],
                     key=lambda col: col.map(chapter_sort_key)
                 ).reset_index(drop=True)
 
-                # Append Numbers chapter at the end
-                numbers_sample = numbers_df.sample(n=10, random_state=None).copy()
+                # Seed numbers once per quiz start for stability across navigation
+                if st.session_state.rand_seed is None:
+                    st.session_state.rand_seed = int(pd.Timestamp.utcnow().value % 1_000_000_000)
+
+                numbers_sample = numbers_df.sample(n=10, random_state=st.session_state.rand_seed).copy()
                 numbers_sample["Chapter"] = "Numbers"
 
                 vietnamese_pages = []
                 korean_pages = []
                 chapters_pages = []
                 chapter_page_ends = []
-
                 current_page = 0
 
                 def chunks(lst, n):
                     for i in range(0, len(lst), n):
                         yield lst[i:i + n]
 
-                # Process each chapter separately
-                chapters_grouped = vocab_sorted.groupby("Chapter")
-                for ch, group in chapters_grouped:
+                # Process chapters in explicit sorted order
+                chapters_grouped = vocab_sorted.groupby("Chapter", sort=True)
+                chapter_order = sorted(chapters_grouped.groups.keys(), key=chapter_sort_key)
+
+                for ch in chapter_order:
+                    group = chapters_grouped.get_group(ch)
                     v_list = group["Vietnamese"].tolist()
                     k_list = group["Korean"].tolist()
 
-                    # Split chapter words into pages of size words_per_page (10)
                     chapter_pages = list(chunks(v_list, words_per_page))
-
-                    # For each page in this chapter
                     for i, v_chunk in enumerate(chapter_pages):
                         k_chunk = k_list[i * words_per_page: i * words_per_page + len(v_chunk)]
                         vietnamese_pages.extend(v_chunk)
@@ -175,10 +181,7 @@ if st.session_state.page == 0:
                 chapter_page_ends.append(current_page)
 
                 total_pages = current_page
-
                 return vietnamese_pages, korean_pages, chapters_pages, chapter_page_ends, total_pages
-
-
 
             vocab, korean, chapters, chapter_page_ends, total_pages = prepare_quiz_data_filtered(selected_chapters)
 
@@ -191,7 +194,6 @@ if st.session_state.page == 0:
             st.session_state.page = 1
             st.session_state.current_chapter = None
             st.rerun()
-
 
 # ===============================
 # Quiz pages
@@ -246,7 +248,7 @@ else:
             if user_input in corrects:
                 score += 1
             elif user_input:
-                feedback.append(f"{vietnamese[i]} (Chapter {chapters[i]}): Correct is '{korean_correct[i]}' (You entered: '{user_inputs[i]}')")
+                feedback.append(f"{vietnamese[i]} (Chapter {chapters[i]}): Correct is '{korean_correct[i]}' (You entered: '{st.session_state.user_inputs[i]}')")
             else:
                 feedback.append(f"{vietnamese[i]} (Chapter {chapters[i]}): Correct is '{korean_correct[i]}' (You left it blank)")
 
@@ -261,40 +263,64 @@ else:
         else:
             st.success("Perfect! All correct!")
 
+        # Reliable Restart
         if st.button("Restart Quiz"):
-            st.session_state.clear()
+            # Explicit reset
+            st.session_state.page = 0
+            st.session_state.user_inputs = []
+            st.session_state.vietnamese = []
+            st.session_state.korean_correct = []
+            st.session_state.chapters = []
+            st.session_state.total_pages = 0
+            st.session_state.chapter_page_ends = []
+            st.session_state.current_chapter = None
+            st.session_state.rand_seed = None
             st.rerun()
 
     else:
-        # Check if current page is last page of a chapter
+        # Per-chapter feedback when finishing a chapter page
         if current_page in chapter_page_ends:
             # Identify which chapter just finished
             idx_last_word = end_idx - 1
-            finished_chapter = chapters[idx_last_word]
-            st.session_state.current_chapter = finished_chapter
+            if 0 <= idx_last_word < len(chapters):
+                finished_chapter = chapters[idx_last_word]
+                st.session_state.current_chapter = finished_chapter
 
-            # Calculate chapter score
-            ch_indices = [i for i, ch in enumerate(chapters) if ch == finished_chapter]
-            ch_score = 0
-            ch_feedback = []
-            for i in ch_indices:
-                user_input = user_inputs[i].strip().lower()
-                correct = str(korean_correct[i]).strip().lower()
-                corrects = [c.strip() for c in correct.split(",")]
-                if user_input in corrects:
-                    ch_score += 1
-                elif user_input:
-                    ch_feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You entered: '{user_inputs[i]}')")
-                else:
-                    ch_feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You left it blank)")
+                # Calculate chapter score
+                ch_indices = [i for i, ch in enumerate(chapters) if ch == finished_chapter]
+                ch_score = 0
+                ch_feedback = []
+                for i in ch_indices:
+                    user_input = user_inputs[i].strip().lower()
+                    correct = str(korean_correct[i]).strip().lower()
+                    corrects = [c.strip() for c in correct.split(",")]
+                    if user_input in corrects:
+                        ch_score += 1
+                    elif user_input:
+                        ch_feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You entered: '{st.session_state.user_inputs[i]}')")
+                    else:
+                        ch_feedback.append(f"{vietnamese[i]}: Correct is '{korean_correct[i]}' (You left it blank)")
 
-            ch_total = len(ch_indices)
-            ch_percent = (ch_score / ch_total) * 100
+                ch_total = len(ch_indices)
+                if ch_total > 0:
+                    ch_percent = (ch_score / ch_total) * 100
+                    st.info(f"You finished Chapter '{finished_chapter}'!")
+                    st.success(f"Score: {ch_score}/{ch_total} ({ch_percent:.2f}%)")
 
-            st.info(f"**You finished Chapter '{finished_chapter}'!**")
-            st.success(f"Score: {ch_score}/{ch_total} ({ch_percent:.2f}%)")
+                    if ch_feedback:
+                        with st.expander(f"Feedback for Chapter '{finished_chapter}' (incorrect/blank)"):
+                            for f in ch_feedback:
+                                st.write(f)
 
-            if ch_feedback:
-                with st.expander(f"Feedback for Chapter '{finished_chapter}' (incorrect/blank)"):
-                    for f in ch_feedback:
-                        st.write(f)
+        # Show Restart also during quiz if you want (optional). Uncomment to enable:
+        # if st.button("Restart Quiz"):
+        #     st.session_state.page = 0
+        #     st.session_state.user_inputs = []
+        #     st.session_state.vietnamese = []
+        #     st.session_state.korean_correct = []
+        #     st.session_state.chapters = []
+        #     st.session_state.total_pages = 0
+        #     st.session_state.chapter_page_ends = []
+        #     st.session_state.current_chapter = None
+        #     st.session_state.rand_seed = None
+        #     st.rerun()
