@@ -40,7 +40,7 @@ pip install -r requirements.txt
 4. Run the app:
 
 ```
-streamlit run web_vocab_app.py
+streamlit run app.py
 ```
 
 Open in your browser at `http://localhost:8501`.
