@@ -283,7 +283,7 @@ else:
             # Identify which chapter just finished
             idx_last_word = end_idx - 1
             if 0 <= idx_last_word < len(chapters):
-                finished_chapter = chapters[idx_last_word]
+                finished_chapter = chapters[min(idx_last_word-1, 0)]
                 st.session_state.current_chapter = finished_chapter
 
                 # Calculate chapter score
